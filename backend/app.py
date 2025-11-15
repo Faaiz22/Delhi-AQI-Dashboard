@@ -104,224 +104,281 @@ def run_agent(aqi_value, conditions_list, forecast=None):
 # ==========================
 # CUSTOM CSS FOR STYLING
 # ==========================
+import streamlit as st
+
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-    
-    html, body, [class*="st-"] {
-        font-family: 'Inter', sans-serif;
-    }
+/* -------------------------
+   Emergency System UI (C5)
+   ------------------------- */
+:root{
+    --bg: #f4f8fb;
+    --app-pad: 22px;
+    --card-radius: 14px;
+    --surface: #ffffff;
+    --muted: #6b7a86;
+    --text-dark: #071428;
+    --accent: #1976d2;
 
-    .stApp {
-        background: linear-gradient(135deg, #E3F2FD 0%, #BBDEFB 50%, #90CAF9 100%);
-    }
+    --aqi-good: #2E7D32;         /* green */
+    --aqi-moderate: #F9A825;     /* amber */
+    --aqi-unhealthy: #EF6C00;    /* orange */
+    --aqi-very: #D32F2F;         /* red */
+    --aqi-hazardous: #B71C1C;    /* deep red */
+}
 
-    header, footer, #MainMenu {
-        visibility: hidden;
-    }
-    
-    .main-title {
-        font-size: 3.5rem;
-        font-weight: 900;
-        color: #0D47A1;
-        padding: 1.5rem 0 0.5rem 0;
-        text-align: center;
-        text-shadow: 2px 2px 4px rgba(13, 71, 161, 0.2);
-        letter-spacing: -1px;
-    }
+/* base / font */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
 
-    .subtitle {
-        font-size: 1.2rem;
-        color: #1565C0;
-        text-align: center;
-        padding-bottom: 1.5rem;
-        font-weight: 500;
-    }
+html, body, [class*="st-"] {
+    font-family: 'Inter', system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+    color: var(--text-dark);
+}
 
-    .metric-card {
-        background-color: #FFFFFF;
-        border-radius: 15px;
-        padding: 1.5rem;
-        border: 2px solid #BBDEFB;
-        box-shadow: 0 4px 20px rgba(33, 150, 243, 0.15);
-        text-align: center;
-        height: 100%;
-    }
-    .metric-card-label {
-        font-size: 1rem;
-        font-weight: 600;
-        color: #1565C0;
-        margin-bottom: 0.5rem;
-    }
-    .metric-card-value {
-        font-size: 2.5rem;
-        font-weight: 800;
-        color: #0D47A1;
-        margin: 0.5rem 0;
-    }
-    .metric-card-delta {
-        font-size: 0.9rem;
-        color: #1976D2;
-        font-weight: 500;
-    }
+/* app background */
+.stApp {
+    background: var(--bg);
+    padding: var(--app-pad);
+}
 
-    .weather-widget {
-        background-color: #FFFFFF;
-        border-radius: 15px;
-        padding: 1.5rem;
-        border: 2px solid #BBDEFB;
-        box-shadow: 0 4px 20px rgba(33, 150, 243, 0.15);
-        height: 100%;
-    }
-    .weather-temp {
-        font-size: 2.5rem;
-        font-weight: 800;
-        color: #0D47A1;
-    }
+/* hide streamlit chrome */
+header, footer, #MainMenu, .css-1v3fvcr {  /* extra selectors for various Streamlit versions */
+    visibility: hidden;
+    height: 0;
+    overflow: hidden;
+    margin: 0;
+    padding: 0;
+}
 
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 1rem;
-        background-color: transparent;
-        padding: 1rem 0;
-    }
-    
-    .stTabs [data-baseweb="tab"] {
-        font-size: 1.1rem;
-        font-weight: 600;
-        background-color: white;
-        border-radius: 15px;
-        padding: 1rem 2rem;
-        border: 2px solid #BBDEFB;
-        color: #262730;
-        box-shadow: 0 2px 10px rgba(33, 150, 243, 0.1);
-    }
-    
-    .stTabs [data-baseweb="tab"]:hover {
-        background-color: #E3F2FD;
-        border-color: #2196F3;
-    }
-    
-    .stTabs [aria-selected="true"] {
-        background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%);
-        color: white !important;
-        border-color: #1976D2;
-    }
+/* Dashboard header */
+.dashboard-header {
+    width: 100%;
+    background: transparent;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+.dashboard-title {
+    font-size: 1.625rem;
+    font-weight: 800;
+    color: var(--text-dark);
+    letter-spacing: -0.2px;
+}
+.dashboard-sub {
+    color: var(--muted);
+    font-size: 0.94rem;
+    font-weight: 500;
+}
 
-    .content-card {
-        background-color: #FFFFFF;
-        padding: 2rem;
-        border-radius: 20px;
-        border: 2px solid #BBDEFB;
-        box-shadow: 0 10px 40px rgba(33, 150, 243, 0.2);
-        margin-top: 1.5rem;
-    }
+/* generic card */
+.content-card {
+    background: var(--surface);
+    border-radius: var(--card-radius);
+    padding: 18px;
+    box-shadow: 0 6px 18px rgba(6,22,33,0.06);
+    border: 1px solid rgba(7,20,40,0.04);
+    margin-bottom: 16px;
+}
 
-    .alert-card {
-        padding: 1rem 1.5rem;
-        border-radius: 12px;
-        margin-bottom: 1rem;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        color: white;
-        font-weight: 600;
-    }
-    .alert-hazardous { 
-        background: linear-gradient(135deg, #EF5350 0%, #E53935 100%);
-        box-shadow: 0 4px 15px rgba(239, 83, 80, 0.3);
-    }
-    .alert-very-unhealthy { 
-        background: linear-gradient(135deg, #FF9800 0%, #F57C00 100%);
-        box-shadow: 0 4px 15px rgba(255, 152, 0, 0.3);
-    }
-    .alert-unhealthy { 
-        background: linear-gradient(135deg, #FFA726 0%, #FB8C00 100%);
-        box-shadow: 0 4px 15px rgba(255, 167, 38, 0.3);
-    }
+/* Section headers inside cards */
+.section-header {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--text-dark);
+    margin-bottom: 12px;
+    display: inline-block;
+}
 
-    .section-header {
-        font-size: 1.5rem;
-        font-weight: 700;
-        color: #0D47A1;
-        margin-bottom: 1.5rem;
-        padding-bottom: 0.5rem;
-        border-bottom: 3px solid #BBDEFB;
-    }
+/* ALERT / AQI card base */
+.aqi-alert {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    padding: 14px;
+    border-radius: 12px;
+    border-left: 6px solid transparent;
+    background: rgba(7,20,40,0.02);
+    transition: transform 120ms ease, box-shadow 120ms ease;
+    min-height: 72px;
+    margin: 10px 0;
+}
 
-    .ai-message-card {
-        background: linear-gradient(135deg, #E8F5E9 0%, #C8E6C9 100%);
-        border-radius: 12px;
-        padding: 1.5rem;
-        margin: 1rem 0;
-        border-left: 4px solid #4CAF50;
-        box-shadow: 0 2px 10px rgba(76, 175, 80, 0.2);
-    }
-    .ai-message-card h3 {
-        color: #2E7D32;
-        margin-top: 0;
-        font-size: 1.3rem;
-    }
-    .ai-message-card p {
-        color: #388E3C;
-        line-height: 1.6;
-        margin-bottom: 0;
-    }
-    
-    .ai-badge {
-        display: inline-block;
-        background: linear-gradient(135deg, #4CAF50 0%, #388E3C 100%);
-        color: white;
-        padding: 0.3rem 0.8rem;
-        border-radius: 20px;
-        font-size: 0.85rem;
-        font-weight: 600;
-        margin-bottom: 0.5rem;
-    }
+/* left content (badge + title + message) */
+.aqi-left {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    flex: 1 1 auto;
+}
+.alert-badge {
+    min-width: 86px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    text-align: center;
+    letter-spacing: 0.6px;
+    color: white;
+}
 
-    div[data-testid="stAlert"] {
-        background-color: white;
-        border-left: 5px solid #2196F3;
-        border-radius: 10px;
-        color: #0D47A1;
-    }
+/* title + details */
+.aqi-title {
+    margin: 0;
+    font-size: 1.05rem;
+    font-weight: 800;
+    color: var(--text-dark);
+    line-height: 1.1;
+}
+.aqi-desc {
+    margin: 4px 0 0 0;
+    color: var(--muted);
+    font-size: 0.95rem;
+    line-height: 1.3;
+}
 
-    div[data-testid="stSuccess"] {
-        background-color: white;
-        border-left: 5px solid #4CAF50;
-        border-radius: 10px;
-        color: #2E7D32;
-    }
+/* action area (right) */
+.aqi-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    justify-content: flex-end;
+}
+.aqi-cta {
+    background: var(--accent);
+    color: white;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 6px 16px rgba(25,118,210,0.12);
+    font-size: 0.92rem;
+}
 
-    div[data-testid="stError"] {
-        background-color: white;
-        border-left: 5px solid #EF5350;
-        border-radius: 10px;
-        color: #C62828;
-    }
+/* hover focus effect for visibility */
+.aqi-alert:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 14px 32px rgba(7,20,40,0.08);
+}
 
-    div[data-testid="stDataFrame"] {
-        border: 2px solid #BBDEFB;
-        border-radius: 10px;
-        background-color: white;
-    }
-    
-    div[data-testid="stPlotlyChart"] {
-        background-color: white;
-        border-radius: 10px;
-        padding: 0.5rem;
-    }
-    
-    .element-container {
-        background-color: transparent;
-    }
-    
-    .block-container {
-        background-color: transparent;
-        padding-top: 2rem;
-    }
+/* Severity-specific styles (solid border + subtle tint) */
+.aqi-good {
+    border-left-color: var(--aqi-good);
+    background: linear-gradient(90deg, rgba(46,125,50,0.06), rgba(46,125,50,0.02));
+}
+.aqi-good .alert-badge {
+    background: var(--aqi-good);
+}
 
+.aqi-moderate {
+    border-left-color: var(--aqi-moderate);
+    background: linear-gradient(90deg, rgba(249,168,37,0.08), rgba(249,168,37,0.02));
+}
+.aqi-moderate .alert-badge {
+    background: var(--aqi-moderate);
+    color: rgba(0,0,0,0.9);
+}
+
+.aqi-unhealthy {
+    border-left-color: var(--aqi-unhealthy);
+    background: linear-gradient(90deg, rgba(239,108,0,0.08), rgba(239,108,0,0.02));
+}
+.aqi-unhealthy .alert-badge {
+    background: var(--aqi-unhealthy);
+}
+
+.aqi-very {
+    border-left-color: var(--aqi-very);
+    background: linear-gradient(90deg, rgba(211,47,47,0.08), rgba(211,47,47,0.02));
+}
+.aqi-very .alert-badge {
+    background: var(--aqi-very);
+}
+
+.aqi-hazardous {
+    border-left-color: var(--aqi-hazardous);
+    background: linear-gradient(90deg, rgba(183,28,28,0.08), rgba(183,28,28,0.02));
+}
+.aqi-hazardous .alert-badge {
+    background: var(--aqi-hazardous);
+}
+
+/* small utilities */
+.kv {
+    font-weight: 700;
+    color: var(--text-dark);
+    margin-right: 8px;
+}
+
+/* responsive tweaks */
+@media (max-width: 720px) {
+    .aqi-alert { flex-direction: column; align-items: stretch; gap: 12px; }
+    .aqi-actions { justify-content: space-between; }
+}
 </style>
 """, unsafe_allow_html=True)
+
+# ---------- Example usage (drop into your app where you render alerts) ----------
+# You can create these HTML blocks with st.markdown(..., unsafe_allow_html=True)
+st.markdown('<div class="dashboard-header"><div class="dashboard-title">Air Quality Alerts</div><div class="dashboard-sub">Status — color-coded by severity</div></div>', unsafe_allow_html=True)
+
+# Good
+st.markdown("""
+<div class="content-card">
+  <div class="aqi-alert aqi-good">
+    <div class="aqi-left">
+      <div class="alert-badge">GOOD</div>
+      <div>
+        <div class="aqi-title">AQI: 35 — All clear</div>
+        <div class="aqi-desc">Air quality is satisfactory. No precautions necessary.</div>
+      </div>
+    </div>
+    <div class="aqi-actions">
+      <button class="aqi-cta" onclick="return false">Details</button>
+    </div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+# Very Unhealthy (example matching your screenshot's severity)
+st.markdown("""
+<div class="content-card">
+  <div class="aqi-alert aqi-hazardous">
+    <div class="aqi-left">
+      <div class="alert-badge">HAZARD</div>
+      <div>
+        <div class="aqi-title">Children Lockdown — Immediate action</div>
+        <div class="aqi-desc">Severe emergency affecting everyone. Maximum protection essential. Consider evacuation for vulnerable groups.</div>
+      </div>
+    </div>
+    <div class="aqi-actions">
+      <button class="aqi-cta" onclick="return false">Evacuate</button>
+    </div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+# Unhealthy
+st.markdown("""
+<div class="content-card">
+  <div class="aqi-alert aqi-unhealthy">
+    <div class="aqi-left">
+      <div class="alert-badge">UNHEALTHY</div>
+      <div>
+        <div class="aqi-title">Indoor shelter recommended</div>
+        <div class="aqi-desc">Maximum air filtration and masks recommended for all individuals.</div>
+      </div>
+    </div>
+    <div class="aqi-actions">
+      <button class="aqi-cta" onclick="return false">Guidance</button>
+    </div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
 
 
 @st.cache_data(show_spinner="Loading Delhi boundary...")
