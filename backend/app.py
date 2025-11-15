@@ -14,6 +14,7 @@ import pyproj
 from shapely.ops import transform
 import smtplib
 from email.message import EmailMessage
+from agent_logic import get_personalized_recommendation, get_aqi_trend_advice, get_delhi_specific_context
 
 # ==========================
 # PAGE CONFIGURATION
@@ -84,6 +85,12 @@ def send_sms_via_email(phone_number, carrier_gateway, message, subject="AQI Aler
         return False, f"SMTP error: {str(e)}"
     except Exception as e:
         return False, f"SMS sending failed: {str(e)}"
+
+def run_agent(aqi_value, conditions_list, forecast=None):
+    rec = get_personalized_recommendation(aqi_value, conditions_list or [])
+    trend = get_aqi_trend_advice(aqi_value, forecast or [])
+    ctx = get_delhi_specific_context(aqi_value, rec.get("risk_profile"))
+    return rec, trend, ctx
 
 # ==========================
 # CUSTOM CSS FOR STYLING
@@ -289,6 +296,23 @@ st.markdown("""
     .block-container {
         background-color: transparent;
         padding-top: 2rem;
+    }
+
+    /* AI message card styling */
+    .ai-message-card {
+        background: linear-gradient(135deg, #E3F2FD 0%, #BBDEFB 100%);
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin: 1rem 0;
+        border-left: 4px solid #2196F3;
+    }
+    .ai-message-card h3 {
+        color: #0D47A1;
+        margin-top: 0;
+    }
+    .ai-message-card p {
+        color: #1565C0;
+        line-height: 1.6;
     }
 
 </style>
@@ -820,21 +844,18 @@ def render_alert_subscription_tab(df):
                 weather_desc = "N/A"
                 temp = 0.0
 
-            # Build message
-            category, _, emoji, advice = get_aqi_category(aqi_value)
+            # Build message using agent logic
+            rec, trend, ctx = run_agent(aqi_value, [])
 
-            message = f"""📍 Delhi Air Quality Alert
+            message = f"""🌫️ Delhi AQI Alert
+AQI: {int(aqi_value)} • {rec['aqi_category']}
 
-Location: {user_lat:.4f}, {user_lon:.4f}
-{emoji} AQI: {aqi_value:.0f} ({category})
-🌡️ Temperature: {temp:.1f}°C
-🌤️ Weather: {weather_desc}
+{rec['summary']}
 
-💡 Health Advice: {advice}
+Precautions: {', '.join(rec['precautions'][:3])}
 
-Stay safe!
+Delhi context: {ctx.get('seasonal_context','N/A')}
 """
-            # --- THIS LOGIC WAS MISSING IN YOUR ORIGINAL CODE ---
             gateway = SMS_GATEWAYS[carrier_name]
             
             with st.spinner("Sending SMS via Email Gateway..."):
@@ -850,197 +871,3 @@ Stay safe!
             st.error(f"An unexpected error occurred: {str(e)}")
             import traceback
             st.code(traceback.format_exc())
-
-
-def render_dummy_forecast_tab():
-    """Render a dummy 24-hour AQI forecast using simulated data."""
-    st.markdown('<div class="section-header">📈 24-Hour AQI Forecast (Sample)</div>',
-                unsafe_allow_html=True)
-
-    st.markdown("""
-    <div style="background-color: #E3F2FD; padding: 1rem; border-radius: 10px; border-left: 4px solid #2196F3; margin-bottom: 1rem;">
-        <p style="color: #0D47A1; margin: 0; font-weight: 500;">
-        This sample forecast simulates how the Air Quality Index (AQI) may change over the next 24 hours.
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # Simulate a smooth AQI forecast for 24 hours
-    hours = np.arange(0, 24)
-    base_aqi = 120 + 40 * np.sin(hours / 3) + np.random.normal(0, 5, size=24)
-    timestamps = [datetime.now() + timedelta(hours=i) for i in range(24)]
-    forecast_df = pd.DataFrame({
-        "timestamp": timestamps,
-        "forecast_aqi": np.clip(base_aqi, 40, 300)
-    })
-
-    # Plot forecast trend
-    fig = px.line(
-        forecast_df,
-        x="timestamp",
-        y="forecast_aqi",
-        title="Predicted AQI Trend for Next 24 Hours (Simulated)",
-        markers=True,
-        line_shape="spline"
-    )
-    fig.update_layout(
-        xaxis_title="Time",
-        yaxis_title="Predicted AQI",
-        showlegend=False,
-        margin=dict(t=40, b=20, l=0, r=20),
-        paper_bgcolor='white',
-        plot_bgcolor='white',
-        title_font_color="#0D47A1",
-        font_color="#0D47A1",
-        xaxis=dict(gridcolor='#E3F2FD'),
-        yaxis=dict(gridcolor='#E3F2FD')
-    )
-
-    st.plotly_chart(fig, use_container_width=True)
-
-    # Display summary
-    avg_aqi = forecast_df["forecast_aqi"].mean()
-    max_aqi = forecast_df["forecast_aqi"].max()
-    min_aqi = forecast_df["forecast_aqi"].min()
-
-    st.markdown(f"""
-    <div style="background-color: white; padding: 1rem; border-radius: 10px; border-left: 5px solid #1976D2; margin-top: 1rem; color: #1E293B;">
-        <b>Average Forecasted AQI:</b> {avg_aqi:.1f}  
-        <br><b>Expected Range:</b> {min_aqi:.1f} – {max_aqi:.1f}
-        <br><b>Air Quality Outlook:</b> Moderate to Unhealthy range over the next day.
-    </div>
-    """, unsafe_allow_html=True)
-
-def render_analytics_tab(df):
-    """Renders charts and data analytics."""
-    st.markdown('<div class="section-header">📊 Data Analytics</div>',
-                unsafe_allow_html=True)
-    c1, c2 = st.columns([1, 1])
-
-    with c1:
-        st.markdown("**AQI Category Distribution**")
-        category_counts = df['category'].value_counts()
-        fig = px.pie(
-            values=category_counts.values, names=category_counts.index, hole=0.4,
-            color=category_counts.index,
-            color_discrete_map={
-                "Good": "#009E60", "Moderate": "#FFD600", "Unhealthy for Sensitive Groups": "#F97316",
-                "Unhealthy": "#DC2626", "Very Unhealthy": "#9333EA", "Hazardous": "#7E22CE"
-            }
-        )
-        fig.update_traces(textinfo='percent+label',
-                          pull=[0.05]*len(category_counts.index))
-        fig.update_layout(
-            showlegend=False,
-            margin=dict(t=0, b=0, l=0, r=0),
-            paper_bgcolor='#F5F5F5',
-            plot_bgcolor='#F5F5F5'
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
-    with c2:
-        st.markdown("**Top 10 Most Polluted Stations**")
-        top_10 = df.nlargest(10, 'aqi').sort_values('aqi', ascending=True)
-        fig = px.bar(
-            top_10, x='aqi', y='station_name', orientation='h',
-            color='aqi', color_continuous_scale=px.colors.sequential.Reds
-        )
-        fig.update_layout(
-            xaxis_title="AQI",
-            yaxis_title="",
-            showlegend=False,
-            margin=dict(t=20, b=20, l=0, r=20),
-            paper_bgcolor='#F5F5F5',
-            plot_bgcolor='#F5F5F5',
-            xaxis=dict(gridcolor='#DDDDDD'),
-            yaxis=dict(gridcolor='#DDDDDD')
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
-    st.markdown("**Full Station Data**")
-    display_df = df[['station_name', 'aqi', 'category',
-                     'last_updated']].sort_values('aqi', ascending=False)
-    st.dataframe(display_df, use_container_width=True, hide_index=True)
-
-
-# ==========================
-# MAIN APP EXECUTION
-# ==========================
-aqi_data_raw = fetch_live_data()
-
-if aqi_data_raw.empty:
-    st.error("⚠️ **Could not fetch live AQI data.** The API may be down or there's a network issue. Please try again later.", icon="🚨")
-    # Render header with empty data to avoid crashing
-    render_header(aqi_data_raw) 
-else:
-    # --- START OF FILTERING LOGIC ---
-    # 1. Load the Delhi boundary from session state
-    delhi_gdf = st.session_state.get("delhi_gdf", None)
-    delhi_polygon = st.session_state.get("delhi_polygon", None)
-    
-    aqi_data_filtered = pd.DataFrame() # Create an empty df
-    
-    if delhi_polygon is not None:
-        # 2. Convert raw station data to a GeoDataFrame
-        geometry = [Point(xy) for xy in zip(aqi_data_raw['lon'], aqi_data_raw['lat'])]
-        stations_gdf = gpd.GeoDataFrame(aqi_data_raw, crs="epsg:4326", geometry=geometry)
-        
-        # 3. Clip stations to keep only those INSIDE the Delhi polygon
-        clipped_gdf = gpd.clip(stations_gdf, delhi_polygon)
-        
-        # Convert back to regular DataFrame to avoid geometry column issues
-        if not clipped_gdf.empty:
-            # Drop the geometry column properly to make it a standard DataFrame again
-            aqi_data_filtered = pd.DataFrame(clipped_gdf.drop(columns='geometry'))
-    
-    if aqi_data_filtered.empty:
-        st.warning("⚠️ **No monitoring stations found inside the Delhi boundary.** Showing all available data for the region.", icon="⚠️")
-        # Fallback to raw data if filtering fails or finds nothing
-        aqi_data_to_display = aqi_data_raw
-    else:
-        st.success(f"✅ Loaded {len(aqi_data_filtered)} monitoring stations inside the Delhi boundary.", icon="🛰️")
-        aqi_data_to_display = aqi_data_filtered
-    # --- END OF FILTERING LOGIC ---
-
-    # 4. Render all components using the (now filtered) data
-    render_header(aqi_data_to_display)
-
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
-        ["🗺️ Live Map", "🔔 Alerts & Health",
-         "📊 Analytics", "📱 SMS Alerts","📈 Forecast","🔥 Kriging Heatmap"])
-
-    with tab1:
-        with st.container():
-            st.markdown('<div class="content-card">', unsafe_allow_html=True)
-            # Pass the filtered data
-            render_map_tab(aqi_data_to_display) 
-            st.markdown('</div>', unsafe_allow_html=True)
-    with tab2:
-        with st.container():
-            st.markdown('<div class="content-card">', unsafe_allow_html=True)
-            # Pass the filtered data
-            render_alerts_tab(aqi_data_to_display)
-            st.markdown('</div>', unsafe_allow_html=True)
-    with tab3:
-        with st.container():
-            st.markdown('<div class="content-card">', unsafe_allow_html=True)
-            # Pass the filtered data
-            render_analytics_tab(aqi_data_to_display)
-            st.markdown('</div>', unsafe_allow_html=True)
-    with tab4:
-        with st.container():
-            st.markdown('<div class="content-card">', unsafe_allow_html=True)
-            # Pass the filtered data (for reference only, main data comes from kriging)
-            render_alert_subscription_tab(aqi_data_to_display)
-            st.markdown('</div>', unsafe_allow_html=True)
-    with tab5:
-        with st.container():
-            st.markdown('<div class="content-card">', unsafe_allow_html=True)
-            render_dummy_forecast_tab()
-            st.markdown('</div>', unsafe_allow_html=True)
-    with tab6:
-        with st.container():
-            st.markdown('<div class="content-card">', unsafe_allow_html=True)
-            # Pass the filtered data (only stations within Delhi boundary)
-            render_kriging_tab(aqi_data_to_display) 
-            st.markdown('</div>', unsafe_allow_html=True)
