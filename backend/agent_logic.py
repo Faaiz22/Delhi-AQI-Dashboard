@@ -19,10 +19,23 @@ except ImportError:
     print("⚠️ Warning: google-generativeai not installed. Install with: pip install google-generativeai")
 
 
+# Try to get API key from multiple sources
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+if not GEMINI_API_KEY:
+    try:
+        import streamlit as st
+        GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "")
+    except:
+        pass
+
 # Configure Gemini API
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")  # Set your API key in environment
 if GEMINI_AVAILABLE and GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
+    try:
+        genai.configure(api_key=GEMINI_API_KEY)
+        print("✅ Gemini API configured successfully")
+    except Exception as e:
+        print(f"⚠️ Gemini API configuration failed: {e}")
+        GEMINI_AVAILABLE = False
 
 
 class AQICategory(Enum):
@@ -140,6 +153,79 @@ def determine_risk_profile(health_conditions: List[str]) -> str:
     return RiskProfile.SENSITIVE.value if health_conditions else RiskProfile.GENERAL.value
 
 
+def get_rule_based_recommendation(aqi_value: float, risk_profile: str, aqi_category: str) -> Dict[str, Any]:
+    """
+    Fallback rule-based recommendation system
+    """
+    # Basic rule-based recommendations by category
+    recommendations = {
+        "Good": {
+            "summary": "Air quality is excellent! Perfect day to enjoy outdoor activities.",
+            "precautions": ["Stay hydrated", "Keep a basic mask handy as conditions can change"],
+            "recommended_activities": ["Outdoor exercise", "Park visits", "Sports activities", "Morning walks"],
+            "health_implications": "Air quality poses minimal risk. Feel free to enjoy outdoor activities.",
+            "delhi_specific": "Make the most of this rare good air quality day in Delhi NCR. Conditions like this are uncommon during winter months."
+        },
+        "Moderate": {
+            "summary": "Air quality is acceptable. Most people can go about normal activities.",
+            "precautions": ["Watch for any symptoms", "Consider masks in heavy traffic", "Take normal breaks during extended outdoor work"],
+            "recommended_activities": ["Normal outdoor activities", "Moderate exercise", "Regular commuting"],
+            "health_implications": "Air quality is acceptable for most people.",
+            "delhi_specific": "This is better than average for Delhi NCR. Normal activities can continue."
+        },
+        "Unhealthy for Sensitive Groups": {
+            "summary": "Sensitive groups should take precautions. Others can continue with awareness.",
+            "precautions": ["Wear mask when outdoors", "Use air purifiers indoors", "Limit prolonged outdoor time", "Watch for throat irritation"],
+            "recommended_activities": ["Prefer indoor activities", "Short outdoor errands with mask", "Reduce strenuous activities"],
+            "health_implications": "Sensitive groups will notice effects. General public may experience minor symptoms.",
+            "delhi_specific": "Typical level for Delhi NCR. Masks and air purifiers become important at this stage."
+        },
+        "Unhealthy": {
+            "summary": "Everyone affected. Stay indoors and use protection when going out.",
+            "precautions": ["Wear N95 mask outdoors", "Keep windows closed", "Use air purifiers", "Avoid outdoor exercise"],
+            "recommended_activities": ["Stay indoors when possible", "Work from home if available", "Indoor activities only"],
+            "health_implications": "Everyone may experience health effects. Sensitive groups at higher risk.",
+            "delhi_specific": "Common during Delhi NCR winter season. Government restrictions typically begin. Use protective measures consistently."
+        },
+        "Very Unhealthy": {
+            "summary": "Health alert for everyone. Stay indoors with air filtration.",
+            "precautions": ["Complete indoor isolation", "Multiple air purifiers essential", "N95 masks mandatory for any outdoor time", "Monitor health closely"],
+            "recommended_activities": ["Indoor activities only", "Work from home mandatory", "Essential travel only with maximum protection"],
+            "health_implications": "Everyone at increased risk. Serious effects for sensitive groups.",
+            "delhi_specific": "Emergency level common during Delhi NCR winter. Government emergency measures typically active. Follow official guidelines."
+        },
+        "Hazardous": {
+            "summary": "Health emergency. Everyone must stay indoors with air filtration.",
+            "precautions": ["Seal windows and doors", "Multiple air purifiers essential", "Complete indoor isolation", "Medical consultation if symptoms worsen"],
+            "recommended_activities": ["Stay indoors in protected environment", "No outdoor activities", "Follow all emergency guidelines"],
+            "health_implications": "Serious health effects for everyone. Follow all emergency protocols.",
+            "delhi_specific": "Emergency level requiring government action. GRAP Stage 4 typically active. Follow all official guidelines and stay protected."
+        },
+        "Severe": {
+            "summary": "Severe health emergency. Maximum protection required for everyone.",
+            "precautions": ["Maximum air filtration essential", "Complete indoor isolation", "Consider evacuation if possible", "Medical supervision recommended"],
+            "recommended_activities": ["Protected indoor environment only", "No outdoor exposure", "Follow emergency directives"],
+            "health_implications": "Severe emergency affecting everyone. Maximum protection essential.",
+            "delhi_specific": "Rare but critical level for Delhi NCR. Full emergency measures in effect. Follow all government directives."
+        },
+        "Severe+": {
+            "summary": "Extreme emergency. Evacuation advisable if possible.",
+            "precautions": ["Consider evacuation to cleaner area", "Maximum protection if staying", "Hospital care may be necessary for vulnerable groups"],
+            "recommended_activities": ["Evacuation advisable", "Maximum protected environment if staying", "Follow all emergency protocols"],
+            "health_implications": "Extreme emergency. Everyone at serious risk. Maximum protection or evacuation essential.",
+            "delhi_specific": "Extreme emergency rarely reached. Consider temporary relocation if feasible. Full government emergency response active."
+        }
+    }
+    
+    # Adjust for risk profile
+    rec = recommendations.get(aqi_category, recommendations["Moderate"]).copy()
+    
+    if risk_profile in ["children", "pregnant", "elderly", "high_risk", "critical"]:
+        rec["precautions"].insert(0, f"As a {risk_profile} individual, extra caution is essential")
+    
+    return rec
+
+
 def get_personalized_recommendation_with_gemini(
     aqi_value: float,
     user_health_conditions: Optional[List[str]] = None,
@@ -147,18 +233,10 @@ def get_personalized_recommendation_with_gemini(
 ) -> Dict[str, Any]:
     """
     Generate AI-powered personalized recommendations using Google Gemini
-    
-    Args:
-        aqi_value: Current AQI value
-        user_health_conditions: List of user's health conditions
-        location: Location context (default: Delhi NCR)
-        
-    Returns:
-        Dictionary containing AI-generated personalized recommendations
     """
     if not GEMINI_AVAILABLE or not GEMINI_API_KEY:
-        # Fallback to rule-based system
-        return get_personalized_recommendation(aqi_value, user_health_conditions)
+        print("⚠️ Gemini not available, using rule-based system")
+        return get_rule_based_fallback(aqi_value, user_health_conditions)
     
     try:
         # Determine basic category and risk profile
@@ -207,8 +285,7 @@ Important guidelines:
 - Be informative but not alarmist
 - Focus on actionable advice
 - Consider Delhi NCR's unique air quality challenges
-- Adapt tone based on severity: supportive for good/moderate, serious but calm for unhealthy/hazardous
-- For vulnerable groups (children, pregnant, elderly, health conditions), be extra cautious but not panic-inducing
+- Adapt tone based on severity
 
 Format your response as valid JSON with these exact keys:
 {{
@@ -226,7 +303,7 @@ Format your response as valid JSON with these exact keys:
         response = model.generate_content(
             prompt,
             generation_config=genai.GenerationConfig(
-                temperature=0.3,  # Lower temperature for more consistent, factual responses
+                temperature=0.3,
                 max_output_tokens=1500,
             )
         )
@@ -234,7 +311,7 @@ Format your response as valid JSON with these exact keys:
         # Parse the response
         response_text = response.text.strip()
         
-        # Extract JSON from response (handle markdown code blocks)
+        # Extract JSON from response
         if "```json" in response_text:
             response_text = response_text.split("```json")[1].split("```")[0].strip()
         elif "```" in response_text:
@@ -260,71 +337,18 @@ Format your response as valid JSON with these exact keys:
         
     except Exception as e:
         print(f"⚠️ Gemini API error: {e}")
-        # Fallback to rule-based system
-        return get_personalized_recommendation(aqi_value, user_health_conditions)
+        return get_rule_based_fallback(aqi_value, user_health_conditions)
 
 
-def get_personalized_recommendation(
-    aqi_value: float,
-    user_health_conditions: Optional[List[str]] = None
-) -> Dict[str, Any]:
-    """
-    Fallback rule-based recommendation system
-    Used when Gemini API is not available
-    """
+def get_rule_based_fallback(aqi_value: float, user_health_conditions: Optional[List[str]] = None) -> Dict[str, Any]:
+    """Fallback to rule-based system"""
     if user_health_conditions is None:
         user_health_conditions = []
     
     aqi_category = get_aqi_category(aqi_value)
     risk_profile = determine_risk_profile(user_health_conditions)
     
-    # Basic rule-based recommendations
-    recommendations = {
-        "Good": {
-            "summary": "Air quality is excellent! Perfect day to enjoy outdoor activities.",
-            "precautions": ["Stay hydrated", "Keep a basic mask handy"],
-            "recommended_activities": ["Outdoor exercise", "Park visits", "Sports activities"],
-            "health_implications": "Air quality poses minimal risk.",
-            "delhi_specific": "Make the most of this rare good air quality day in Delhi NCR."
-        },
-        "Moderate": {
-            "summary": "Air quality is acceptable. Most people can go about normal activities.",
-            "precautions": ["Watch for any symptoms", "Consider masks in heavy traffic"],
-            "recommended_activities": ["Normal outdoor activities", "Moderate exercise"],
-            "health_implications": "Air quality is acceptable for most people.",
-            "delhi_specific": "This is better than average for Delhi NCR."
-        },
-        "Unhealthy for Sensitive Groups": {
-            "summary": "Sensitive groups should take precautions. Others can continue normal activities with awareness.",
-            "precautions": ["Wear mask when outdoors", "Use air purifiers", "Limit prolonged outdoor time"],
-            "recommended_activities": ["Prefer indoor activities", "Short outdoor errands with mask"],
-            "health_implications": "Sensitive groups will notice effects. General public may experience minor symptoms.",
-            "delhi_specific": "Typical level for Delhi NCR. Masks and air purifiers become important."
-        },
-        "Unhealthy": {
-            "summary": "Everyone affected. Stay indoors and use protection when going out.",
-            "precautions": ["Wear N95 mask outdoors", "Keep windows closed", "Use air purifiers"],
-            "recommended_activities": ["Stay indoors when possible", "Work from home if available"],
-            "health_implications": "Everyone may experience health effects.",
-            "delhi_specific": "Common during Delhi NCR winter season. Use protective measures consistently."
-        },
-        "Very Unhealthy": {
-            "summary": "Health alert for everyone. Stay indoors with air filtration.",
-            "precautions": ["Complete indoor isolation", "Multiple air purifiers", "N95 masks mandatory"],
-            "recommended_activities": ["Indoor activities only", "Work from home", "Essential travel only"],
-            "health_implications": "Everyone at increased risk. Serious effects for sensitive groups.",
-            "delhi_specific": "Emergency level common during Delhi winter. Follow official guidelines."
-        },
-        "Hazardous": {
-            "summary": "Health emergency. Everyone must stay indoors with air filtration.",
-            "precautions": ["Seal windows", "Multiple air purifiers", "Complete indoor isolation"],
-            "recommended_activities": ["Stay indoors", "No outdoor activities", "Follow emergency guidelines"],
-            "health_implications": "Serious health effects for everyone.",
-            "delhi_specific": "Emergency level requiring government action. Follow all official guidelines."
-        }
-    }
-    
-    rec = recommendations.get(aqi_category, recommendations["Moderate"])
+    rec = get_rule_based_recommendation(aqi_value, risk_profile, aqi_category)
     
     return {
         "aqi_value": aqi_value,
@@ -341,142 +365,7 @@ def get_personalized_recommendation(
     }
 
 
-def get_aqi_trend_advice(current_aqi: float, forecasted_aqi: List[float]) -> Dict[str, Any]:
-    """
-    Provide advice based on AQI trends using Gemini AI
-    """
-    if not forecasted_aqi:
-        return {"trend": "unknown", "advice": "No forecast data available."}
-    
-    avg_forecast = sum(forecasted_aqi) / len(forecasted_aqi)
-    max_forecast = max(forecasted_aqi)
-    min_forecast = min(forecasted_aqi)
-    
-    if not GEMINI_AVAILABLE or not GEMINI_API_KEY:
-        # Simple rule-based fallback
-        if avg_forecast > current_aqi + 30:
-            trend = "worsening"
-            advice = f"Air quality expected to worsen. Peak AQI may reach {max_forecast:.0f}."
-        elif avg_forecast < current_aqi - 30:
-            trend = "improving"
-            advice = f"Air quality expected to improve. Lowest AQI may be {min_forecast:.0f}."
-        else:
-            trend = "stable"
-            advice = f"Air quality expected to remain similar around {avg_forecast:.0f}."
-        
-        return {
-            "trend": trend,
-            "current_aqi": current_aqi,
-            "average_forecast": round(avg_forecast, 1),
-            "max_forecast": round(max_forecast, 1),
-            "min_forecast": round(min_forecast, 1),
-            "advice": advice
-        }
-    
-    try:
-        # Use Gemini for trend analysis
-        prompt = f"""Analyze this AQI trend data for Delhi NCR and provide brief, actionable advice:
-
-Current AQI: {current_aqi}
-Forecasted AQI (next 24 hours): {forecasted_aqi}
-Average forecast: {avg_forecast:.1f}
-Peak forecast: {max_forecast:.0f}
-Lowest forecast: {min_forecast:.0f}
-
-Provide a concise trend analysis (2-3 sentences) focusing on:
-1. Whether air quality is improving, worsening, or staying stable
-2. Best time windows for outdoor activities (if any)
-3. Key precautions to take
-
-Keep the tone informative and practical."""
-
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        response = model.generate_content(prompt)
-        
-        # Determine trend
-        if avg_forecast > current_aqi + 30:
-            trend = "worsening"
-        elif avg_forecast < current_aqi - 30:
-            trend = "improving"
-        else:
-            trend = "stable"
-        
-        return {
-            "trend": trend,
-            "current_aqi": current_aqi,
-            "average_forecast": round(avg_forecast, 1),
-            "max_forecast": round(max_forecast, 1),
-            "min_forecast": round(min_forecast, 1),
-            "advice": response.text.strip(),
-            "ai_powered": True
-        }
-        
-    except Exception as e:
-        print(f"⚠️ Gemini trend analysis error: {e}")
-        # Fallback to simple rule
-        if avg_forecast > current_aqi + 30:
-            advice = f"Air quality worsening. Peak may reach {max_forecast:.0f}."
-        elif avg_forecast < current_aqi - 30:
-            advice = f"Air quality improving. May drop to {min_forecast:.0f}."
-        else:
-            advice = f"Air quality stable around {avg_forecast:.0f}."
-        
-        return {
-            "trend": "stable",
-            "current_aqi": current_aqi,
-            "average_forecast": round(avg_forecast, 1),
-            "advice": advice,
-            "ai_powered": False
-        }
-
-
-def get_delhi_specific_context(aqi_value: float, risk_profile: str) -> Dict[str, Any]:
-    """
-    Provide Delhi NCR-specific contextual information using Gemini
-    """
-    aqi_category = get_aqi_category(aqi_value)
-    
-    if not GEMINI_AVAILABLE or not GEMINI_API_KEY:
-        # Basic fallback context
-        return {
-            "seasonal_context": "Delhi NCR experiences high pollution during winter months (Oct-Feb).",
-            "government_measures": "GRAP measures may be in effect at this AQI level.",
-            "local_tips": "Use N95 masks, air purifiers, and monitor AQI regularly."
-        }
-    
-    try:
-        # Use Gemini for context
-        prompt = f"""Provide brief Delhi NCR-specific context for AQI {aqi_value} ({aqi_category}):
-
-1. Current season considerations (1 sentence)
-2. Typical government measures at this level (1 sentence)
-3. One practical local tip for Delhi residents
-
-Keep it concise and actionable. Format as plain text, 3 short paragraphs."""
-
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        response = model.generate_content(prompt)
-        
-        context_text = response.text.strip()
-        
-        return {
-            "seasonal_context": context_text,
-            "government_measures": f"GRAP Stage measures typically active at AQI {aqi_value}",
-            "local_tips": "Check AQI before outdoor activities, use N95 masks, and maintain air purifiers.",
-            "ai_powered": True
-        }
-        
-    except Exception as e:
-        print(f"⚠️ Gemini context error: {e}")
-        return {
-            "seasonal_context": "Delhi NCR pollution varies by season, worst during winter months.",
-            "government_measures": "Government restrictions may apply at this AQI level.",
-            "local_tips": "Use protective measures and monitor air quality regularly.",
-            "ai_powered": False
-        }
-
-
-# Convenience function that uses Gemini when available
+# Main entry point function - NO RECURSION!
 def get_personalized_recommendation(
     aqi_value: float,
     user_health_conditions: Optional[List[str]] = None
@@ -485,18 +374,69 @@ def get_personalized_recommendation(
     if GEMINI_AVAILABLE and GEMINI_API_KEY:
         return get_personalized_recommendation_with_gemini(aqi_value, user_health_conditions)
     else:
-        # Import and use the full rule-based system from original file
-        # For now, using simplified version
-        return get_personalized_recommendation(aqi_value, user_health_conditions)
+        return get_rule_based_fallback(aqi_value, user_health_conditions)
+
+
+def get_aqi_trend_advice(current_aqi: float, forecasted_aqi: List[float]) -> Dict[str, Any]:
+    """
+    Provide advice based on AQI trends
+    """
+    if not forecasted_aqi:
+        return {"trend": "unknown", "advice": "No forecast data available."}
+    
+    avg_forecast = sum(forecasted_aqi) / len(forecasted_aqi)
+    max_forecast = max(forecasted_aqi)
+    min_forecast = min(forecasted_aqi)
+    
+    # Simple rule-based trend
+    if avg_forecast > current_aqi + 30:
+        trend = "worsening"
+        advice = f"Air quality expected to worsen. Peak AQI may reach {max_forecast:.0f}. Plan indoor activities."
+    elif avg_forecast < current_aqi - 30:
+        trend = "improving"
+        advice = f"Air quality expected to improve. Lowest AQI may be {min_forecast:.0f}. Better conditions ahead."
+    else:
+        trend = "stable"
+        advice = f"Air quality expected to remain similar around {avg_forecast:.0f}. Continue current precautions."
+    
+    return {
+        "trend": trend,
+        "current_aqi": current_aqi,
+        "average_forecast": round(avg_forecast, 1),
+        "max_forecast": round(max_forecast, 1),
+        "min_forecast": round(min_forecast, 1),
+        "advice": advice
+    }
+
+
+def get_delhi_specific_context(aqi_value: float, risk_profile: str) -> Dict[str, Any]:
+    """
+    Provide Delhi NCR-specific contextual information
+    """
+    aqi_category = get_aqi_category(aqi_value)
+    
+    # Determine season
+    month = datetime.now().month
+    if month in [10, 11, 12, 1, 2]:
+        season = "Winter pollution season in Delhi NCR. Air quality typically worst Oct-Feb due to stubble burning, low wind, and temperature inversion."
+    elif month in [6, 7, 8, 9]:
+        season = "Monsoon season. Rain helps clear pollution temporarily. Air quality generally better during this period."
+    else:
+        season = "Pre-summer period. Dust storms common. Air quality variable but generally better than winter months."
+    
+    return {
+        "seasonal_context": season,
+        "government_measures": f"GRAP measures may be active at AQI {aqi_value}",
+        "local_tips": "Use N95 masks, air purifiers, and monitor AQI regularly. Check official government announcements for restrictions."
+    }
 
 
 if __name__ == "__main__":
     # Test the agent
-    print("🤖 Testing AQI Agent with Gemini AI...")
+    print("🤖 Testing AQI Agent...")
     print(f"Gemini Available: {GEMINI_AVAILABLE}")
     print(f"API Key Set: {bool(GEMINI_API_KEY)}")
     
-    # Test case
     test_aqi = 150
     test_conditions = ["asthma", "child"]
     
@@ -507,4 +447,3 @@ if __name__ == "__main__":
     print(f"Risk Profile: {result['risk_profile']}")
     print(f"AI Powered: {result.get('ai_powered', False)}")
     print(f"\nSummary: {result['summary']}")
-    print(f"\nPrecautions: {result['precautions']}")
