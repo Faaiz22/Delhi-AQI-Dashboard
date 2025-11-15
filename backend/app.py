@@ -5,7 +5,6 @@ import requests
 import pydeck as pdk
 import plotly.express as px
 from datetime import datetime, timedelta
-# Assuming these functions exist in your krigging.py as per imports
 from krigging import perform_kriging_correct
 from krigging import get_aqi_at_location
 import geopandas as gpd
@@ -14,14 +13,21 @@ import pyproj
 from shapely.ops import transform
 import smtplib
 from email.message import EmailMessage
-from agent_logic import get_personalized_recommendation, get_aqi_trend_advice, get_delhi_specific_context
+
+# Import AI Agent Logic with Gemini
+from agent_logic import (
+    get_personalized_recommendation,
+    get_aqi_trend_advice,
+    get_delhi_specific_context,
+    get_aqi_category
+)
 
 # ==========================
 # PAGE CONFIGURATION
 # ==========================
 st.set_page_config(
     layout="wide",
-    page_title="Delhi Air Quality Dashboard",
+    page_title="Delhi Air Quality Dashboard - AI Powered",
     page_icon="💨"
 )
 
@@ -38,10 +44,9 @@ DELHI_GEOJSON_URL = "https://raw.githubusercontent.com/shuklaneerajdev/IndiaStat
 # ==========================
 # EMAIL TO SMS CONFIGURATION
 # ==========================
-SENDER_EMAIL = "anumaliknr@gmail.com"  # Replace with your Gmail
-GMAIL_APP_PASSWORD = "xczo lasg vcek olqp"  # Replace with Gmail App Password
+SENDER_EMAIL = "anumaliknr@gmail.com"
+GMAIL_APP_PASSWORD = "xczo lasg vcek olqp"
 
-# SMS Gateway mapping for different carriers
 SMS_GATEWAYS = {
     "Airtel": "@airtelmail.com",
     "Jio": "@jionet.com", 
@@ -54,43 +59,47 @@ SMS_GATEWAYS = {
 }
 
 def send_sms_via_email(phone_number, carrier_gateway, message, subject="AQI Alert"):
-    """
-    Send SMS using Email-to-SMS gateway via Gmail SMTP
-    """
+    """Send SMS using Email-to-SMS gateway via Gmail SMTP"""
     try:
-        # Remove any non-digit characters from phone number
         phone_clean = ''.join(filter(str.isdigit, phone_number))
-        
-        # Create SMS gateway address
         gateway_address = f"{phone_clean}{carrier_gateway}"
         
-        # Create email message
         msg = EmailMessage()
         msg.set_content(message)
         msg["From"] = SENDER_EMAIL
         msg["To"] = gateway_address
         msg["Subject"] = subject
         
-        # Send via Gmail SMTP
         with smtplib.SMTP("smtp.gmail.com", 587) as server:
             server.starttls()
             server.login(SENDER_EMAIL, GMAIL_APP_PASSWORD)
             server.send_message(msg)
         
-        return True, f"SMS sent successfully to {phone_clean} via {carrier_gateway}"
+        return True, f"SMS sent successfully to {phone_clean}"
         
     except smtplib.SMTPAuthenticationError:
-        return False, "Email authentication failed. Please check your Gmail credentials and ensure 'App Password' is enabled."
-    except smtplib.SMTPException as e:
-        return False, f"SMTP error: {str(e)}"
+        return False, "Email authentication failed. Check Gmail credentials."
     except Exception as e:
         return False, f"SMS sending failed: {str(e)}"
 
 def run_agent(aqi_value, conditions_list, forecast=None):
-    rec = get_personalized_recommendation(aqi_value, conditions_list or [])
-    trend = get_aqi_trend_advice(aqi_value, forecast or [])
-    ctx = get_delhi_specific_context(aqi_value, rec.get("risk_profile"))
-    return rec, trend, ctx
+    """Run the AI agent to get personalized recommendations"""
+    try:
+        rec = get_personalized_recommendation(aqi_value, conditions_list or [])
+        trend = get_aqi_trend_advice(aqi_value, forecast or [])
+        ctx = get_delhi_specific_context(aqi_value, rec.get("risk_profile", "general"))
+        return rec, trend, ctx
+    except Exception as e:
+        st.error(f"Agent error: {e}")
+        # Return fallback data
+        return {
+            "aqi_value": aqi_value,
+            "aqi_category": get_aqi_category(aqi_value),
+            "summary": "Air quality information available.",
+            "precautions": ["Monitor air quality", "Use protection when needed"],
+            "recommended_activities": ["Stay informed", "Follow guidelines"],
+            "ai_powered": False
+        }, {"trend": "unknown", "advice": "Monitor conditions"}, {"seasonal_context": "N/A"}
 
 # ==========================
 # CUSTOM CSS FOR STYLING
@@ -103,17 +112,14 @@ st.markdown("""
         font-family: 'Inter', sans-serif;
     }
 
-    /* Main background - Sky Blue Theme */
     .stApp {
         background: linear-gradient(135deg, #E3F2FD 0%, #BBDEFB 50%, #90CAF9 100%);
     }
 
-    /* Hide Streamlit's default header and footer */
     header, footer, #MainMenu {
         visibility: hidden;
     }
     
-    /* Main title styling */
     .main-title {
         font-size: 3.5rem;
         font-weight: 900;
@@ -124,7 +130,6 @@ st.markdown("""
         letter-spacing: -1px;
     }
 
-    /* Subtitle styling */
     .subtitle {
         font-size: 1.2rem;
         color: #1565C0;
@@ -133,7 +138,6 @@ st.markdown("""
         font-weight: 500;
     }
 
-    /* Metric cards styling */
     .metric-card {
         background-color: #FFFFFF;
         border-radius: 15px;
@@ -161,7 +165,6 @@ st.markdown("""
         font-weight: 500;
     }
 
-    /* Weather widget styling */
     .weather-widget {
         background-color: #FFFFFF;
         border-radius: 15px;
@@ -176,7 +179,6 @@ st.markdown("""
         color: #0D47A1;
     }
 
-    /* Styling for Streamlit tabs */
     .stTabs [data-baseweb="tab-list"] {
         gap: 1rem;
         background-color: transparent;
@@ -205,7 +207,6 @@ st.markdown("""
         border-color: #1976D2;
     }
 
-    /* General card for content */
     .content-card {
         background-color: #FFFFFF;
         padding: 2rem;
@@ -215,7 +216,6 @@ st.markdown("""
         margin-top: 1.5rem;
     }
 
-    /* Alert cards for different severity levels */
     .alert-card {
         padding: 1rem 1.5rem;
         border-radius: 12px;
@@ -239,7 +239,6 @@ st.markdown("""
         box-shadow: 0 4px 15px rgba(255, 167, 38, 0.3);
     }
 
-    /* Section headers */
     .section-header {
         font-size: 1.5rem;
         font-weight: 700;
@@ -249,7 +248,36 @@ st.markdown("""
         border-bottom: 3px solid #BBDEFB;
     }
 
-    /* Info box styling */
+    .ai-message-card {
+        background: linear-gradient(135deg, #E8F5E9 0%, #C8E6C9 100%);
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin: 1rem 0;
+        border-left: 4px solid #4CAF50;
+        box-shadow: 0 2px 10px rgba(76, 175, 80, 0.2);
+    }
+    .ai-message-card h3 {
+        color: #2E7D32;
+        margin-top: 0;
+        font-size: 1.3rem;
+    }
+    .ai-message-card p {
+        color: #388E3C;
+        line-height: 1.6;
+        margin-bottom: 0;
+    }
+    
+    .ai-badge {
+        display: inline-block;
+        background: linear-gradient(135deg, #4CAF50 0%, #388E3C 100%);
+        color: white;
+        padding: 0.3rem 0.8rem;
+        border-radius: 20px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+    }
+
     div[data-testid="stAlert"] {
         background-color: white;
         border-left: 5px solid #2196F3;
@@ -257,7 +285,6 @@ st.markdown("""
         color: #0D47A1;
     }
 
-    /* Success box styling */
     div[data-testid="stSuccess"] {
         background-color: white;
         border-left: 5px solid #4CAF50;
@@ -265,7 +292,6 @@ st.markdown("""
         color: #2E7D32;
     }
 
-    /* Error box styling */
     div[data-testid="stError"] {
         background-color: white;
         border-left: 5px solid #EF5350;
@@ -273,46 +299,25 @@ st.markdown("""
         color: #C62828;
     }
 
-    /* Dataframe styling */
     div[data-testid="stDataFrame"] {
         border: 2px solid #BBDEFB;
         border-radius: 10px;
         background-color: white;
     }
     
-    /* Chart containers */
     div[data-testid="stPlotlyChart"] {
         background-color: white;
         border-radius: 10px;
         padding: 0.5rem;
     }
     
-    /* Ensure all containers have white background */
     .element-container {
         background-color: transparent;
     }
     
-    /* Block container styling */
     .block-container {
         background-color: transparent;
         padding-top: 2rem;
-    }
-
-    /* AI message card styling */
-    .ai-message-card {
-        background: linear-gradient(135deg, #E3F2FD 0%, #BBDEFB 100%);
-        border-radius: 12px;
-        padding: 1.5rem;
-        margin: 1rem 0;
-        border-left: 4px solid #2196F3;
-    }
-    .ai-message-card h3 {
-        color: #0D47A1;
-        margin-top: 0;
-    }
-    .ai-message-card p {
-        color: #1565C0;
-        line-height: 1.6;
     }
 
 </style>
@@ -323,19 +328,14 @@ st.markdown("""
 def load_delhi_boundary_from_url():
     try:
         gdf = gpd.read_file(DELHI_GEOJSON_URL)
-
-        # FORCE CRS TO EPSG:4326 (VERY IMPORTANT)
         if gdf.crs is None or gdf.crs.to_epsg() != 4326:
             gdf = gdf.to_crs("EPSG:4326")
-
         polygon = gdf.unary_union
         return gdf, polygon
-
     except Exception as e:
         st.error(f"Failed to load Delhi polygon: {e}")
         return None, None
 
-# Load once into session_state
 if "delhi_gdf" not in st.session_state or "delhi_polygon" not in st.session_state:
     gdf, polygon = load_delhi_boundary_from_url()
     st.session_state["delhi_gdf"] = gdf
@@ -355,7 +355,6 @@ def fetch_live_data():
             df = df[df['aqi'] != "-"]
             df['aqi'] = pd.to_numeric(df['aqi'], errors='coerce')
             df = df.dropna(subset=['aqi'])
-            # Robustly extract station name and last updated time
 
             def safe_get_name(x):
                 if isinstance(x, dict):
@@ -380,7 +379,7 @@ def fetch_live_data():
             df['station_name'] = df['station'].apply(safe_get_name)
             df['last_updated'] = df['station'].apply(safe_get_time)
             df[['category', 'color', 'emoji', 'advice']] = df['aqi'].apply(
-                get_aqi_category).apply(pd.Series)
+                get_aqi_category_visual).apply(pd.Series)
             df['lat'] = pd.to_numeric(df['lat'], errors='coerce')
             df['lon'] = pd.to_numeric(df['lon'], errors='coerce')
             df = df.dropna(subset=['lat', 'lon'])
@@ -402,96 +401,73 @@ def fetch_weather_data():
         return None
 
 
-def get_aqi_category(aqi):
-    """Categorizes AQI value and provides color, emoji, and health advice."""
-    if aqi <= 50:
-        return "Good", [0, 158, 96], "✅", "Enjoy outdoor activities."
-    elif aqi <= 100:
-        return "Moderate", [255, 214, 0], "🟡", "Unusually sensitive people should consider reducing prolonged or heavy exertion."
-    elif aqi <= 150:
-        return "Unhealthy for Sensitive Groups", [249, 115, 22], "🟠", "Sensitive groups should reduce prolonged or heavy exertion."
-    elif aqi <= 200:
-        return "Unhealthy", [220, 38, 38], "🔴", "Everyone may begin to experience health effects."
-    elif aqi <= 300:
-        return "Very Unhealthy", [147, 51, 234], "🟣", "Health alert: everyone may experience more serious health effects."
-    else:
-        return "Hazardous", [126, 34, 206], "☠️", "Health warnings of emergency conditions. The entire population is more likely to be affected."
+def get_aqi_category_visual(aqi):
+    """Categorizes AQI value for visual display"""
+    category_name = get_aqi_category(aqi)
+    
+    visual_mapping = {
+        "Good": ([0, 158, 96], "✅", "Enjoy outdoor activities."),
+        "Moderate": ([255, 214, 0], "🟡", "Unusually sensitive people should consider reducing prolonged exertion."),
+        "Unhealthy for Sensitive Groups": ([249, 115, 22], "🟠", "Sensitive groups should reduce prolonged exertion."),
+        "Unhealthy": ([220, 38, 38], "🔴", "Everyone may begin to experience health effects."),
+        "Very Unhealthy": ([147, 51, 234], "🟣", "Health alert: everyone may experience more serious health effects."),
+        "Hazardous": ([126, 34, 206], "☠️", "Health warnings of emergency conditions."),
+        "Severe": ([107, 0, 25], "⚠️", "Severe health emergency."),
+        "Severe+": ([75, 0, 18], "🚨", "Extreme health emergency.")
+    }
+    
+    color, emoji, advice = visual_mapping.get(category_name, ([128, 128, 128], "❓", "Unknown"))
+    return category_name, color, emoji, advice
+
 
 def render_kriging_tab(df):
     st.subheader("Spatial Interpolation (Kriging)")
-
     delhi_bounds_tuple = (28.40, 28.88, 76.84, 77.35)
-
-    # Load polygon from session state
     delhi_polygon = st.session_state.get("delhi_polygon", None)
 
     if delhi_polygon is None:
         st.error("Delhi boundary could not be loaded.")
         return
 
-    # Check if we have enough stations
     if len(df) < 3:
-        st.error("Not enough AQI stations within Delhi boundary for kriging interpolation (minimum 3 required).")
+        st.error("Not enough AQI stations for kriging interpolation (minimum 3 required).")
         return
 
     with st.spinner("Performing spatial interpolation..."):
         try:
             lon_grid, lat_grid, z = perform_kriging_correct(
-                df,
-                delhi_bounds_tuple,
-                polygon=delhi_polygon,
-                resolution=250  # Increased resolution for better detail
+                df, delhi_bounds_tuple, polygon=delhi_polygon, resolution=250
             )
 
-            # ❗ SAVE THE RESULT FOR SMS TAB
             st.session_state["kriging_output"] = (lon_grid, lat_grid, z)
             st.success("✅ Kriging interpolation completed successfully!")
 
-            # Create Heatmap with better visualization
             heatmap_df = pd.DataFrame({
                 "lon": lon_grid.flatten(),
                 "lat": lat_grid.flatten(),
                 "aqi": z.flatten()
             })
             
-            # Remove NaN values for cleaner visualization
             heatmap_df = heatmap_df.dropna(subset=['aqi'])
 
             fig = px.density_mapbox(
-                heatmap_df,
-                lat="lat",
-                lon="lon",
-                z="aqi",
-                radius=15,  # Increased radius for smoother interpolation
-                center=dict(lat=28.6139, lon=77.2090),
-                zoom=9.5,
+                heatmap_df, lat="lat", lon="lon", z="aqi", radius=15,
+                center=dict(lat=28.6139, lon=77.2090), zoom=9.5,
                 mapbox_style="carto-positron",
-                color_continuous_scale=[
-                    "#009E60", "#FFD600", "#F97316",
-                    "#DC2626", "#9333EA", "#7E22CE"
-                ],
-                range_color=[0, 400],  # Set color range
+                color_continuous_scale=["#009E60", "#FFD600", "#F97316", "#DC2626", "#9333EA", "#7E22CE"],
+                range_color=[0, 400],
                 title="Interpolated AQI Heatmap across Delhi"
             )
             
             fig.update_layout(
                 margin=dict(t=40, b=0, l=0, r=0),
-                coloraxis_colorbar=dict(
-                    title="AQI",
-                    thicknessmode="pixels",
-                    thickness=15,
-                    lenmode="pixels",
-                    len=300
-                )
+                coloraxis_colorbar=dict(title="AQI", thicknessmode="pixels", thickness=15, lenmode="pixels", len=300)
             )
 
             st.plotly_chart(fig, use_container_width=True)
         
         except Exception as e:
             st.error(f"Error performing kriging: {str(e)}")
-            import traceback
-            st.code(traceback.format_exc())
-
 
 
 def get_weather_info(code):
@@ -508,33 +484,28 @@ def get_weather_info(code):
     return codes.get(code, ("Unknown", "❓"))
 
 
-# ==========================
-# UI RENDERING FUNCTIONS
-# ==========================
-
-
 def render_header(df):
     """Renders the main header with summary metrics and weather."""
-    st.markdown('<div class="main-title">🌍 Delhi Air Quality Dashboard</div>',
-                unsafe_allow_html=True)
-    last_update_time = df['last_updated'].max(
-    ) if not df.empty and 'last_updated' in df.columns else "N/A"
-    st.markdown(
-        f'<p class="subtitle">Real-time monitoring • Last updated: {last_update_time}</p>', unsafe_allow_html=True)
+    st.markdown('<div class="main-title">🤖 Delhi Air Quality Dashboard - AI Powered</div>', unsafe_allow_html=True)
+    last_update_time = df['last_updated'].max() if not df.empty and 'last_updated' in df.columns else "N/A"
+    st.markdown(f'<p class="subtitle">Real-time monitoring with Gemini AI • Last updated: {last_update_time}</p>', unsafe_allow_html=True)
 
     c1, c2, c3, c4 = st.columns(4)
     if not df.empty:
         with c1:
             st.markdown(
-                f'<div class="metric-card"><div class="metric-card-label">Average AQI</div><div class="metric-card-value">{df["aqi"].mean():.1f}</div><div class="metric-card-delta">{get_aqi_category(df["aqi"].mean())[0]}</div></div>', unsafe_allow_html=True)
+                f'<div class="metric-card"><div class="metric-card-label">Average AQI</div><div class="metric-card-value">{df["aqi"].mean():.1f}</div><div class="metric-card-delta">{get_aqi_category(df["aqi"].mean())}</div></div>',
+                unsafe_allow_html=True)
         with c2:
             min_station = df.loc[df["aqi"].idxmin()]["station_name"]
             st.markdown(
-                f'<div class="metric-card"><div class="metric-card-label">Minimum AQI</div><div class="metric-card-value">{df["aqi"].min():.0f}</div><div class="metric-card-delta">{min_station}</div></div>', unsafe_allow_html=True)
+                f'<div class="metric-card"><div class="metric-card-label">Minimum AQI</div><div class="metric-card-value">{df["aqi"].min():.0f}</div><div class="metric-card-delta">{min_station}</div></div>',
+                unsafe_allow_html=True)
         with c3:
             max_station = df.loc[df["aqi"].idxmax()]["station_name"]
             st.markdown(
-                f'<div class="metric-card"><div class="metric-card-label">Maximum AQI</div><div class="metric-card-value">{df["aqi"].max():.0f}</div><div class="metric-card-delta">{max_station}</div></div>', unsafe_allow_html=True)
+                f'<div class="metric-card"><div class="metric-card-label">Maximum AQI</div><div class="metric-card-value">{df["aqi"].max():.0f}</div><div class="metric-card-delta">{max_station}</div></div>',
+                unsafe_allow_html=True)
 
     with c4:
         weather_data = fetch_weather_data()
@@ -566,15 +537,12 @@ def render_header(df):
 
 def render_map_tab(df):
     """Renders the interactive map of AQI stations."""
-    # The 'df' passed here is already filtered!
-    st.markdown('<div class="section-header">📍 Interactive Air Quality Map (Stations inside Delhi)</div>',
-                unsafe_allow_html=True)
+    st.markdown('<div class="section-header">📍 Interactive Air Quality Map (Stations inside Delhi)</div>', unsafe_allow_html=True)
 
     if df.empty:
         st.warning("No monitoring stations found inside the Delhi boundary.")
         return
 
-    # Add Legend (No changes here)
     st.markdown("""
     <div style="background-color: white; padding: 1rem; border-radius: 10px; border: 2px solid #BBDEFB; margin-bottom: 1rem;">
         <div style="font-weight: 700; color: #0D47A1; margin-bottom: 0.75rem; font-size: 1.1rem;">AQI Color Legend</div>
@@ -607,35 +575,25 @@ def render_map_tab(df):
     </div>
     """, unsafe_allow_html=True)
 
-    # Plot the FILTERED data
     st.pydeck_chart(pdk.Deck(
         map_style="light",
-        initial_view_state=pdk.ViewState(
-            latitude=DELHI_LAT, longitude=DELHI_LON, zoom=9.5, pitch=50),
+        initial_view_state=pdk.ViewState(latitude=DELHI_LAT, longitude=DELHI_LON, zoom=9.5, pitch=50),
         layers=[pdk.Layer(
-            "ScatterplotLayer",
-            data=df, # This 'df' is now the filtered one
-            get_position='[lon, lat]',
-            get_fill_color='color',
-            get_radius=250,
-            pickable=True,
-            opacity=0.8,
-            stroked=True,
-            get_line_color=[0, 0, 0, 100],
-            line_width_min_pixels=1,
+            "ScatterplotLayer", data=df, get_position='[lon, lat]', get_fill_color='color',
+            get_radius=250, pickable=True, opacity=0.8, stroked=True,
+            get_line_color=[0, 0, 0, 100], line_width_min_pixels=1,
         )],
         tooltip={"html": "<b>{station_name}</b><br/>AQI: {aqi}<br/>Category: {category}<br/>Last Updated: {last_updated}",
                  "style": {"color": "white"}}
     ))
 
+
 def render_alerts_tab(df):
     """Renders health alerts and advice based on current AQI levels."""
-    st.markdown('<div class="section-header">🔔 Health Alerts & Recommendations</div>',
-                unsafe_allow_html=True)
+    st.markdown('<div class="section-header">🔔 Health Alerts & Recommendations</div>', unsafe_allow_html=True)
     max_aqi = df['aqi'].max()
-    advice = get_aqi_category(max_aqi)[3]
-    st.info(
-        f"**Current Situation:** Based on the highest AQI of **{max_aqi:.0f}**, the recommended action is: **{advice}**", icon="ℹ️")
+    advice = get_aqi_category_visual(max_aqi)[2]
+    st.info(f"**Current Situation:** Based on the highest AQI of **{max_aqi:.0f}**, the recommended action is: **{advice}**", icon="ℹ️")
 
     alerts = {
         "Hazardous": (df[df['aqi'] > 300], "alert-hazardous"),
@@ -646,33 +604,30 @@ def render_alerts_tab(df):
     for level, (subset, card_class) in alerts.items():
         if not subset.empty:
             has_alerts = True
-            st.markdown(
-                f"**{subset.iloc[0]['emoji']} {level} Conditions Detected**")
+            st.markdown(f"**{subset.iloc[0]['emoji']} {level} Conditions Detected**")
             for _, row in subset.sort_values('aqi', ascending=False).iterrows():
                 st.markdown(
-                    f'<div class="alert-card {card_class}"><span style="font-weight: 600;">{row["station_name"]}</span> <span style="font-weight: 700; font-size: 1.2rem;">AQI {row["aqi"]:.0f}</span></div>', unsafe_allow_html=True)
+                    f'<div class="alert-card {card_class}"><span style="font-weight: 600;">{row["station_name"]}</span> <span style="font-weight: 700; font-size: 1.2rem;">AQI {row["aqi"]:.0f}</span></div>',
+                    unsafe_allow_html=True)
 
     if not has_alerts:
-        st.success("✅ No significant air quality alerts at the moment. AQI levels are currently within the good to moderate range for most areas.", icon="✅")
+        st.success("✅ No significant air quality alerts at the moment.", icon="✅")
 
 
 def render_alert_subscription_tab(df):
-    st.subheader("📩 Real-Time AQI Alerts (via SMS)")
+    st.subheader("📩 Real-Time AQI Alerts (via SMS) - AI Powered")
 
-    # Load polygon for Delhi from session state
     polygon = st.session_state.get("delhi_polygon", None)
     if polygon is None:
         st.error("Delhi boundary polygon not loaded.")
         return
 
-    # Load latest kriging data from session - AUTO-GENERATE IF NOT AVAILABLE
     kriging_data = st.session_state.get("kriging_output", None)
     if kriging_data is None:
         st.info("🔄 Generating kriging interpolation automatically...")
         
-        # Check if we have enough stations
         if len(df) < 3:
-            st.error("Not enough AQI stations within Delhi boundary for interpolation (minimum 3 required).")
+            st.error("Not enough AQI stations for interpolation (minimum 3 required).")
             return
             
         delhi_bounds_tuple = (28.40, 28.88, 76.84, 77.35)
@@ -680,12 +635,8 @@ def render_alert_subscription_tab(df):
         try:
             with st.spinner("Performing spatial interpolation..."):
                 lon_grid, lat_grid, z_grid = perform_kriging_correct(
-                    df,
-                    delhi_bounds_tuple,
-                    polygon=polygon,
-                    resolution=200
+                    df, delhi_bounds_tuple, polygon=polygon, resolution=200
                 )
-                # Save to session state
                 st.session_state["kriging_output"] = (lon_grid, lat_grid, z_grid)
                 st.success("✅ Kriging data generated successfully!")
                 kriging_data = (lon_grid, lat_grid, z_grid)
@@ -697,10 +648,9 @@ def render_alert_subscription_tab(df):
 
     st.markdown("### 📍 Select Your Location")
     
-    # Location method selection
     location_method = st.radio(
         "Choose how to provide your location:",
-        ["🗺️ Select from Map/Dropdown", "✍️ Enter Coordinates Manually", "📡 Use Device GPS"],
+        ["🗺️ Select from Map/Dropdown", "✍️ Enter Coordinates Manually"],
         horizontal=True
     )
     
@@ -710,7 +660,6 @@ def render_alert_subscription_tab(df):
     if location_method == "🗺️ Select from Map/Dropdown":
         st.info("💡 Select a popular location in Delhi or choose from monitoring stations")
         
-        # Popular Delhi locations
         popular_locations = {
             "Connaught Place": (28.6315, 77.2167),
             "India Gate": (28.6129, 77.2295),
@@ -724,70 +673,24 @@ def render_alert_subscription_tab(df):
             "Nehru Place": (28.5494, 77.2501)
         }
         
-        # Add monitoring stations to dropdown
         station_locations = {}
         for _, row in df.iterrows():
             station_locations[f"📍 {row['station_name']} (AQI: {row['aqi']:.0f})"] = (row['lat'], row['lon'])
         
         all_locations = {**popular_locations, **station_locations}
         
-        selected_location = st.selectbox(
-            "Select Location:",
-            options=list(all_locations.keys())
-        )
+        selected_location = st.selectbox("Select Location:", options=list(all_locations.keys()))
         
         user_lat, user_lon = all_locations[selected_location]
         st.success(f"✅ Selected: {selected_location} ({user_lat:.4f}, {user_lon:.4f})")
         
-    elif location_method == "✍️ Enter Coordinates Manually":
+    else:
         st.info("💡 Enter latitude and longitude coordinates")
         col1, col2 = st.columns(2)
         with col1:
             user_lat = st.number_input("Latitude", format="%.6f", step=0.000001, value=28.6139)
         with col2:
             user_lon = st.number_input("Longitude", format="%.6f", step=0.000001, value=77.2090)
-            
-    else:  # Device GPS
-        st.info("📡 Click the button below to request your device location")
-        
-        # JavaScript to get geolocation
-        location_component = st.empty()
-        
-        if st.button("📍 Get My Location", key="gps_button"):
-            st.markdown("""
-                <script>
-                if (navigator.geolocation) {
-                    navigator.geolocation.getCurrentPosition(
-                        function(position) {
-                            const lat = position.coords.latitude;
-                            const lon = position.coords.longitude;
-                            
-                            // Store in session storage
-                            sessionStorage.setItem('user_lat', lat);
-                            sessionStorage.setItem('user_lon', lon);
-                            
-                            // Reload page to update
-                            window.location.reload();
-                        },
-                        function(error) {
-                            alert('Error getting location: ' + error.message);
-                        }
-                    );
-                } else {
-                    alert('Geolocation is not supported by your browser');
-                }
-                </script>
-            """, unsafe_allow_html=True)
-        
-        # Try to read from query params (after reload)
-        query_params = st.experimental_get_query_params()
-        if 'lat' in query_params and 'lon' in query_params:
-            try:
-                user_lat = float(query_params['lat'][0])
-                user_lon = float(query_params['lon'][0])
-                st.success(f"✅ GPS Location: {user_lat:.4f}, {user_lon:.4f}")
-            except:
-                st.warning("⚠️ Could not parse GPS coordinates")
 
     st.markdown("---")
     st.markdown("### 📱 SMS Alert Configuration")
@@ -798,7 +701,7 @@ def render_alert_subscription_tab(df):
         phone_number = st.text_input(
             "Phone Number (with country code)", 
             placeholder="+919876543210 or 919876543210",
-            help="Enter phone number with country code (e.g., +91 for India). The + sign is optional."
+            help="Enter phone number with country code (e.g., +91 for India)."
         )
         
     with col2:
@@ -808,7 +711,7 @@ def render_alert_subscription_tab(df):
             help="Select your mobile carrier to route the SMS correctly."
         )
 
-    if st.button("🚀 Get AQI Alert via SMS", type="primary", use_container_width=True):
+    if st.button("🚀 Get AI-Powered AQI Alert via SMS", type="primary", use_container_width=True):
         if not phone_number:
             st.warning("⚠️ Please enter a phone number!")
             return
@@ -817,57 +720,395 @@ def render_alert_subscription_tab(df):
             st.warning("⚠️ Please provide your location!")
             return
 
-        # Get AQI using kriging function
         try:
-            aqi_value, outside = get_aqi_at_location(
-                user_lat,
-                user_lon,
-                lat_grid,
-                lon_grid,
-                z_grid,
-                polygon
-            )
+            aqi_value, outside = get_aqi_at_location(user_lat, user_lon, lat_grid, lon_grid, z_grid, polygon)
 
             if np.isnan(aqi_value):
-                st.error("❌ Could not determine AQI for this location. Please try a different location.")
+                st.error("❌ Could not determine AQI for this location.")
                 return
 
             if outside:
-                st.warning("⚠️ Your location is outside Delhi boundary. Using nearest interpolated AQI value.")
+                st.warning("⚠️ Your location is outside Delhi boundary. Using nearest interpolated value.")
 
-            # Get weather data
-            weather = fetch_weather_data()
-            if weather and "current" in weather:
-                weather_desc, _ = get_weather_info(weather["current"]["weather_code"])
-                temp = weather["current"]["temperature_2m"]
-            else:
-                weather_desc = "N/A"
-                temp = 0.0
+            # Get AI-powered recommendations
+            with st.spinner("🤖 AI Agent analyzing air quality..."):
+                rec, trend, ctx = run_agent(aqi_value, [])
 
-            # Build message using agent logic
-            rec, trend, ctx = run_agent(aqi_value, [])
+            # Build AI-powered message
+            message = f"""🤖 AI-Powered Delhi AQI Alert
 
-            message = f"""🌫️ Delhi AQI Alert
-AQI: {int(aqi_value)} • {rec['aqi_category']}
+📍 Location: {user_lat:.4f}, {user_lon:.4f}
+📊 AQI: {int(aqi_value)} • {rec['aqi_category']}
 
-{rec['summary']}
+🧠 AI Analysis:
+{rec['summary'][:120]}...
 
-Precautions: {', '.join(rec['precautions'][:3])}
+⚠️ Key Precautions:
+{', '.join(rec['precautions'][:2])}
 
-Delhi context: {ctx.get('seasonal_context','N/A')}
+🌆 Delhi Context:
+{ctx.get('seasonal_context', 'N/A')[:100]}
+
+Powered by Gemini AI
+Stay safe!
 """
             gateway = SMS_GATEWAYS[carrier_name]
             
-            with st.spinner("Sending SMS via Email Gateway..."):
+            with st.spinner("📤 Sending AI-powered SMS..."):
                 success, status_msg = send_sms_via_email(phone_number, gateway, message)
                 
                 if success:
                     st.success(f"✅ {status_msg}")
-                    st.info("ℹ️ Note: SMS delivery depends on carrier gateway policies. It may appear as an email or text.")
+                    st.info("ℹ️ AI-powered alert sent! SMS delivery depends on carrier gateway.")
+                    
+                    # Show what was sent
+                    with st.expander("📧 View AI-Generated Alert"):
+                        st.text(message)
                 else:
                     st.error(f"❌ Failed: {status_msg}")
                     
         except Exception as e:
-            st.error(f"An unexpected error occurred: {str(e)}")
-            import traceback
-            st.code(traceback.format_exc())
+            st.error(f"An error occurred: {str(e)}")
+
+
+def render_dummy_forecast_tab():
+    """Render a dummy 24-hour AQI forecast."""
+    st.markdown('<div class="section-header">📈 24-Hour AQI Forecast (Sample)</div>', unsafe_allow_html=True)
+
+    st.markdown("""
+    <div style="background-color: #E3F2FD; padding: 1rem; border-radius: 10px; border-left: 4px solid #2196F3; margin-bottom: 1rem;">
+        <p style="color: #0D47A1; margin: 0; font-weight: 500;">
+        This sample forecast simulates AQI changes over the next 24 hours.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    hours = np.arange(0, 24)
+    base_aqi = 120 + 40 * np.sin(hours / 3) + np.random.normal(0, 5, size=24)
+    timestamps = [datetime.now() + timedelta(hours=i) for i in range(24)]
+    forecast_df = pd.DataFrame({
+        "timestamp": timestamps,
+        "forecast_aqi": np.clip(base_aqi, 40, 300)
+    })
+
+    fig = px.line(
+        forecast_df, x="timestamp", y="forecast_aqi",
+        title="Predicted AQI Trend for Next 24 Hours (Simulated)",
+        markers=True, line_shape="spline"
+    )
+    fig.update_layout(
+        xaxis_title="Time", yaxis_title="Predicted AQI", showlegend=False,
+        margin=dict(t=40, b=20, l=0, r=20), paper_bgcolor='white', plot_bgcolor='white',
+        title_font_color="#0D47A1", font_color="#0D47A1",
+        xaxis=dict(gridcolor='#E3F2FD'), yaxis=dict(gridcolor='#E3F2FD')
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+    avg_aqi = forecast_df["forecast_aqi"].mean()
+    max_aqi = forecast_df["forecast_aqi"].max()
+    min_aqi = forecast_df["forecast_aqi"].min()
+
+    st.markdown(f"""
+    <div style="background-color: white; padding: 1rem; border-radius: 10px; border-left: 5px solid #1976D2; margin-top: 1rem; color: #1E293B;">
+        <b>Average Forecasted AQI:</b> {avg_aqi:.1f}  
+        <br><b>Expected Range:</b> {min_aqi:.1f} – {max_aqi:.1f}
+        <br><b>Air Quality Outlook:</b> Moderate to Unhealthy range expected.
+    </div>
+    """, unsafe_allow_html=True)
+
+
+def render_analytics_tab(df):
+    """Renders charts and data analytics."""
+    st.markdown('<div class="section-header">📊 Data Analytics</div>', unsafe_allow_html=True)
+    c1, c2 = st.columns([1, 1])
+
+    with c1:
+        st.markdown("**AQI Category Distribution**")
+        category_counts = df['category'].value_counts()
+        fig = px.pie(
+            values=category_counts.values, names=category_counts.index, hole=0.4,
+            color=category_counts.index,
+            color_discrete_map={
+                "Good": "#009E60", "Moderate": "#FFD600", 
+                "Unhealthy for Sensitive Groups": "#F97316",
+                "Unhealthy": "#DC2626", "Very Unhealthy": "#9333EA", 
+                "Hazardous": "#7E22CE"
+            }
+        )
+        fig.update_traces(textinfo='percent+label', pull=[0.05]*len(category_counts.index))
+        fig.update_layout(showlegend=False, margin=dict(t=0, b=0, l=0, r=0), 
+                         paper_bgcolor='#F5F5F5', plot_bgcolor='#F5F5F5')
+        st.plotly_chart(fig, use_container_width=True)
+
+    with c2:
+        st.markdown("**Top 10 Most Polluted Stations**")
+        top_10 = df.nlargest(10, 'aqi').sort_values('aqi', ascending=True)
+        fig = px.bar(
+            top_10, x='aqi', y='station_name', orientation='h',
+            color='aqi', color_continuous_scale=px.colors.sequential.Reds
+        )
+        fig.update_layout(
+            xaxis_title="AQI", yaxis_title="", showlegend=False,
+            margin=dict(t=20, b=20, l=0, r=20), paper_bgcolor='#F5F5F5', 
+            plot_bgcolor='#F5F5F5',
+            xaxis=dict(gridcolor='#DDDDDD'), yaxis=dict(gridcolor='#DDDDDD')
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("**Full Station Data**")
+    display_df = df[['station_name', 'aqi', 'category', 'last_updated']].sort_values('aqi', ascending=False)
+    st.dataframe(display_df, use_container_width=True, hide_index=True)
+
+
+# ==========================
+# MAIN APP EXECUTION
+# ==========================
+aqi_data_raw = fetch_live_data()
+
+if aqi_data_raw.empty:
+    st.error("⚠️ **Could not fetch live AQI data.** Please try again later.", icon="🚨")
+    render_header(aqi_data_raw)
+else:
+    delhi_gdf = st.session_state.get("delhi_gdf", None)
+    delhi_polygon = st.session_state.get("delhi_polygon", None)
+    
+    aqi_data_filtered = pd.DataFrame()
+    
+    if delhi_polygon is not None:
+        geometry = [Point(xy) for xy in zip(aqi_data_raw['lon'], aqi_data_raw['lat'])]
+        stations_gdf = gpd.GeoDataFrame(aqi_data_raw, crs="epsg:4326", geometry=geometry)
+        clipped_gdf = gpd.clip(stations_gdf, delhi_polygon)
+        
+        if not clipped_gdf.empty:
+            aqi_data_filtered = pd.DataFrame(clipped_gdf.drop(columns='geometry'))
+    
+    if aqi_data_filtered.empty:
+        st.warning("⚠️ **No stations inside Delhi boundary.** Showing all available data.", icon="⚠️")
+        aqi_data_to_display = aqi_data_raw
+    else:
+        st.success(f"✅ Loaded {len(aqi_data_filtered)} stations inside Delhi boundary.", icon="🛰️")
+        aqi_data_to_display = aqi_data_filtered
+
+    render_header(aqi_data_to_display)
+
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+        "🗺️ Live Map",
+        "🔔 Alerts & Health",
+        "📊 Analytics",
+        "📱 SMS Alerts",
+        "📈 Forecast",
+        "🔥 Kriging Heatmap",
+        "🧍 Individual Advisor",
+        "👨‍👩‍👧 Family Advisor"
+    ])
+
+    with tab1:
+        with st.container():
+            st.markdown('<div class="content-card">', unsafe_allow_html=True)
+            render_map_tab(aqi_data_to_display)
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+    with tab2:
+        with st.container():
+            st.markdown('<div class="content-card">', unsafe_allow_html=True)
+            render_alerts_tab(aqi_data_to_display)
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+    with tab3:
+        with st.container():
+            st.markdown('<div class="content-card">', unsafe_allow_html=True)
+            render_analytics_tab(aqi_data_to_display)
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+    with tab4:
+        with st.container():
+            st.markdown('<div class="content-card">', unsafe_allow_html=True)
+            render_alert_subscription_tab(aqi_data_to_display)
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+    with tab5:
+        with st.container():
+            st.markdown('<div class="content-card">', unsafe_allow_html=True)
+            render_dummy_forecast_tab()
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+    with tab6:
+        with st.container():
+            st.markdown('<div class="content-card">', unsafe_allow_html=True)
+            render_kriging_tab(aqi_data_to_display)
+            st.markdown('</div>', unsafe_allow_html=True)
+    
+    with tab7:
+        st.markdown('<div class="content-card">', unsafe_allow_html=True)
+        st.subheader("🤖 AI-Powered Personal AQI Advisor")
+        
+        # Check if Gemini is available
+        try:
+            from agent_logic import GEMINI_AVAILABLE, GEMINI_API_KEY
+            if GEMINI_AVAILABLE and GEMINI_API_KEY:
+                st.markdown('<span class="ai-badge">🤖 Powered by Gemini AI</span>', unsafe_allow_html=True)
+            else:
+                st.info("💡 Set GEMINI_API_KEY environment variable to enable AI-powered recommendations")
+        except:
+            pass
+
+        if aqi_data_to_display.empty:
+            st.warning("No AQI data available.")
+        else:
+            aqi_data_to_display['dist'] = aqi_data_to_display.apply(
+                lambda r: ((r['lat']-DELHI_LAT)**2 + (r['lon']-DELHI_LON)**2)**0.5, axis=1
+            )
+            nearest = aqi_data_to_display.loc[aqi_data_to_display['dist'].idxmin()]
+            est_aqi = nearest['aqi']
+
+            st.metric("Estimated AQI at Your Location", int(est_aqi), 
+                     delta=f"{get_aqi_category(est_aqi)}")
+
+            st.markdown("#### 🏥 Your Health Profile")
+            conds = st.text_input(
+                "Enter your health conditions (comma-separated):",
+                placeholder="e.g., asthma, child, elderly, pregnant",
+                help="Be specific: asthma, COPD, heart disease, pregnant, child, elderly, etc."
+            )
+            cond_list = [c.strip() for c in conds.split(",") if c.strip()]
+            
+            if cond_list:
+                st.info(f"📋 Health conditions: {', '.join(cond_list)}")
+
+            if st.button("🤖 Get AI-Powered Personalized Advice", type="primary", use_container_width=True):
+                with st.spinner("🤖 AI Agent analyzing your situation..."):
+                    rec, trend, ctx = run_agent(est_aqi, cond_list)
+
+                # Display AI-powered recommendations
+                ai_badge = "🤖 AI" if rec.get("ai_powered") else "📋 Rules"
+                
+                st.markdown(
+                    f"""<div class='ai-message-card'>
+                    <span class="ai-badge">{ai_badge}</span>
+                    <h3>{rec['aqi_category']} (AQI {rec['aqi_value']:.0f})</h3>
+                    <p>{rec['summary']}</p>
+                    </div>""",
+                    unsafe_allow_html=True
+                )
+
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    with st.expander("⚠️ Precautions", expanded=True):
+                        for p in rec["precautions"]:
+                            st.write("• " + p)
+
+                with col2:
+                    with st.expander("✅ Recommended Activities", expanded=True):
+                        for a in rec["recommended_activities"]:
+                            st.write("• " + a)
+
+                with st.expander("🏥 Health Implications"):
+                    st.write(rec.get("health_implications", "No specific health implications noted."))
+
+                with st.expander("🌆 Delhi-Specific Context"):
+                    st.write(ctx.get("seasonal_context", "No specific context available."))
+                
+                # Show trend if available
+                if trend and trend.get("trend") != "unknown":
+                    st.markdown("#### 📈 Trend Analysis")
+                    trend_icon = "⬆️" if trend["trend"] == "worsening" else "⬇️" if trend["trend"] == "improving" else "➡️"
+                    st.info(f"{trend_icon} **{trend['trend'].title()}:** {trend['advice']}")
+
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    with tab8:
+        st.markdown('<div class="content-card">', unsafe_allow_html=True)
+        st.subheader("👨‍👩‍👧 AI-Powered Family AQI Advisor")
+        
+        # Check if Gemini is available
+        try:
+            from agent_logic import GEMINI_AVAILABLE, GEMINI_API_KEY
+            if GEMINI_AVAILABLE and GEMINI_API_KEY:
+                st.markdown('<span class="ai-badge">🤖 Powered by Gemini AI</span>', unsafe_allow_html=True)
+        except:
+            pass
+
+        if "family" not in st.session_state:
+            st.session_state.family = []
+
+        st.markdown("#### 👥 Add Family Members")
+        
+        with st.form("add_family"):
+            col1, col2 = st.columns(2)
+            with col1:
+                name = st.text_input("Name:", placeholder="e.g., John")
+                age = st.number_input("Age:", 1, 120, 30)
+            with col2:
+                conds = st.text_input(
+                    "Health conditions:", 
+                    placeholder="e.g., asthma, child",
+                    help="Enter relevant health conditions or age group"
+                )
+            
+            submit = st.form_submit_button("➕ Add Family Member", use_container_width=True)
+            if submit and name:
+                st.session_state.family.append({
+                    "name": name,
+                    "age": age,
+                    "conds": [c.strip() for c in conds.split(",") if c.strip()]
+                })
+                st.success(f"✅ Added {name} to family members")
+                st.rerun()
+
+        if st.session_state.family:
+            st.markdown("#### 👨‍👩‍👧‍👦 Current Family Members")
+            
+            # Display family members in a nice format
+            for idx, m in enumerate(st.session_state.family):
+                col1, col2 = st.columns([4, 1])
+                with col1:
+                    conditions_text = ', '.join(m['conds']) if m['conds'] else 'No specific conditions'
+                    st.write(f"**{m['name']}** • {m['age']} years • {conditions_text}")
+                with col2:
+                    if st.button("🗑️", key=f"remove_{idx}", help=f"Remove {m['name']}"):
+                        st.session_state.family.pop(idx)
+                        st.rerun()
+
+            st.markdown("---")
+            
+            if st.button("🤖 Generate AI Family Recommendations", type="primary", use_container_width=True):
+                if aqi_data_to_display.empty:
+                    st.warning("No AQI data available for analysis.")
+                else:
+                    est_aqi = aqi_data_to_display['aqi'].mean()
+                    
+                    st.markdown(f"### 📊 Family Analysis for AQI {est_aqi:.0f}")
+                    
+                    with st.spinner("🤖 AI analyzing recommendations for each family member..."):
+                        for m in st.session_state.family:
+                            rec, _, _ = run_agent(est_aqi, m['conds'])
+                            
+                            ai_badge = "🤖" if rec.get("ai_powered") else "📋"
+                            
+                            st.markdown(
+                                f"""<div class='metric-card' style='text-align: left; margin: 1rem 0;'>
+                                <h4>{ai_badge} {m['name']} ({m['age']} years)</h4>
+                                <p><b>Category:</b> {rec['aqi_category']}</p>
+                                <p>{rec['summary']}</p>
+                                <details>
+                                <summary style='cursor: pointer; color: #2196F3; font-weight: 600;'>View Details</summary>
+                                <div style='margin-top: 1rem;'>
+                                <p><b>Key Precautions:</b></p>
+                                <ul>{''.join([f'<li>{p}</li>' for p in rec['precautions'][:3]])}</ul>
+                                <p><b>Recommended Activities:</b></p>
+                                <ul>{''.join([f'<li>{a}</li>' for a in rec['recommended_activities'][:3]])}</ul>
+                                </div>
+                                </details>
+                                </div>""",
+                                unsafe_allow_html=True
+                            )
+            
+            if st.button("🗑️ Clear All Family Members"):
+                st.session_state.family = []
+                st.rerun()
+        else:
+            st.info("👥 No family members added yet. Use the form above to add family members.")
+
+        st.markdown('</div>', unsafe_allow_html=True)
