@@ -185,6 +185,25 @@ def get_personalized_recommendation_with_gemini(
                 conditions = ', '.join(member.get('health_conditions', [])) if member.get('health_conditions') else 'none'
                 family_context += f"- {name} (Age: {age}): Health Conditions: {conditions}\n"
         
+        # Build the JSON template based on whether family is included
+        if family_members:
+            json_template = """{
+    "summary": "string",
+    "precautions": ["string", "string", ...],
+    "recommended_activities": ["string", "string", ...],
+    "health_implications": "string",
+    "delhi_specific": "string",
+    "family_specific": "string"
+}"""
+        else:
+            json_template = """{
+    "summary": "string",
+    "precautions": ["string", "string", ...],
+    "recommended_activities": ["string", "string", ...],
+    "health_implications": "string",
+    "delhi_specific": "string"
+}"""
+        
         # Create the prompt for Gemini
         prompt = f"""You are an expert air quality health advisor specializing in Delhi NCR region with deep knowledge of respiratory health and environmental medicine.
 
@@ -244,14 +263,7 @@ Important:
 - Reference Delhi landmarks/areas if helpful for context
 
 Format your response as valid JSON with these exact keys:
-{{
-    "summary": "string",
-    "precautions": ["string", "string", ...],
-    "recommended_activities": ["string", "string", ...],
-    "health_implications": "string",
-    "delhi_specific": "string"{',
-    "family_specific": "string"' if family_members else ''}
-}}"""
+{json_template}"""
 
         # Initialize Gemini model
         model = genai.GenerativeModel('gemini-1.5-flash')
@@ -444,7 +456,7 @@ def get_personalized_recommendation(
 
 
 def format_recommendation_for_sms(recommendation: Dict[str, Any], recipient_name: str = "") -> str:
-    """Format recommendation as SMS/WhatsApp message"""
+    """Format recommendation as SMS/WhatsApp/Telegram message"""
     name_prefix = f"Dear {recipient_name},\n\n" if recipient_name else ""
     
     msg = f"""{name_prefix}🌫️ Delhi AQI Alert - {recommendation['aqi_category']}
@@ -499,6 +511,6 @@ if __name__ == "__main__":
     print(f"\nSummary: {result['summary']}")
     
     print("\n" + "="*50)
-    print("SMS FORMAT:")
+    print("TELEGRAM FORMAT:")
     print("="*50)
     print(format_recommendation_for_sms(result, "John's Family"))
